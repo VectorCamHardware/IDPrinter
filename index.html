@@ -159,10 +159,9 @@
       white-space: nowrap;
     }
 
-    /* SVG bracket: 50mm wide, 5mm tall */
+    /* Ruler: real length set inline per call, 5mm tall */
     .scale-bracket-svg {
       display: block;
-      width: 5mm;
       height: 5mm;
     }
 
@@ -460,6 +459,22 @@ function pad(n, digits) {
   return String(n).padStart(digits, '0');
 }
 
+// A true-to-scale ruler, `lenMm` long, for checking print scale against a real ruler or calipers.
+// 1mm ticks, taller 5mm ticks, full-height ticks at both ends and at every 15mm.
+function buildRulerSvg(lenMm) {
+  const h = 5; // physical height, mm
+  let s = `<svg class="scale-bracket-svg" style="width:${lenMm.toFixed(2)}mm;height:${h}mm;" viewBox="0 0 ${lenMm.toFixed(2)} ${h}" xmlns="http://www.w3.org/2000/svg">`;
+  s += `<line x1="0" y1="${h}" x2="${lenMm.toFixed(2)}" y2="${h}" stroke="#000" stroke-width="0.15"/>`;
+  const n = Math.floor(lenMm + 1e-6);
+  for (let i = 0; i <= n; i++) {
+    const tall = i % 15 === 0, mid = i % 5 === 0;
+    const th = tall ? h : mid ? h * 0.6 : h * 0.3;
+    s += `<line x1="${i}" y1="${h}" x2="${i}" y2="${(h - th).toFixed(2)}" stroke="#000" stroke-width="${tall ? 0.18 : 0.1}"/>`;
+  }
+  s += `</svg>`;
+  return s;
+}
+
 function buildPageTable(codes, idh, spech, fs) {
   const COLS = 8;
   const COL_WIDTHS = [18, 21.5, 21.5, 21.5, 21.5, 21.5, 21.5, 18]; // mm per column
@@ -561,14 +576,10 @@ function buildGrid() {
     html += buildPageTable(pageCodes, idh, spech, fs);
     html += `<div class="page-footer" style="width:${gridW}mm;">`;
 
-    // Left: 5 cm scale bar — label and |_| on same line
+    // Left: 15mm reference ruler — label and ticks on same line
     html += `<div class="scale-bar">`;
-    html += `<span class="scale-bar-label">5 mm</span>`;
-    html += `<svg class="scale-bracket-svg" viewBox="0 0 100 10" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">`;
-    html += `<line x1="0" y1="10" x2="100" y2="10" stroke="#000" stroke-width="1.2"/>`;
-    html += `<line x1="0"   y1="0" x2="0"   y2="10" stroke="#000" stroke-width="1.2"/>`;
-    html += `<line x1="100" y1="0" x2="100" y2="10" stroke="#000" stroke-width="1.2"/>`;
-    html += `</svg>`;
+    html += `<span class="scale-bar-label">15mm Reference</span>`;
+    html += buildRulerSvg(15);
     html += `</div>`;
 
     // Right: dimension legend
