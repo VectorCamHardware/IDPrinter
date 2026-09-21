@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grid Printer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      background: #f5f5f5;
+      color: #111;
+      padding: 1.5rem;
+    }
+
+    h1 { font-size: 18px; font-weight: 500; margin-bottom: 1.25rem; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+      gap: 10px;
+      margin-bottom: 1rem;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 4px; }
+
+    .field label {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .field input,
+    .field select {
+      padding: 6px 8px;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      color: #111;
+      width: 100%;
+    }
+
+    .field input:focus,
+    .field select:focus { outline: 2px solid #4a90e2; outline-offset: 1px; }
+
+    .actions { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; }
+
+    button {
+      padding: 7px 18px;
+      font-size: 13px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+    }
+
+    button:hover { background: #f0f0f0; }
+
+    button.primary {
+      background: #111;
+      color: #fff;
+      border-color: transparent;
+    }
+
+    button.primary:hover { background: #333; }
+
+    .hint { font-size: 12px; color: #888; margin-bottom: 1rem; }
+
+    .preview-wrap {
+      overflow: auto;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #e0e0e0;
+      padding: 16px;
+      max-height: 620px;
+    }
+
+    /* Each page is a white card in the preview */
+    .page {
+      background: white;
+      margin-bottom: 20px;
+      padding: 10mm;
+      display: inline-block;
+      position: relative;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    }
+
+    .page:last-child { margin-bottom: 0; }
+
+    table {
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    /* ID label row — full borders, text centered */
+    .id-row td {
+      border: 1px solid #222;
+      vertical-align: middle;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    /* Specimen row — NO internal vertical lines, only left/right/bottom outer border */
+    .spec-row td {
+      border-top: none;
+      border-bottom: 1px solid #222;
+      border-left: none;
+      border-right: none;
+      vertical-align: top;
+    }
+
+    .spec-row td:first-child { border-left: 1px solid #222; }
+    .spec-row td:last-child  { border-right: 1px solid #222; }
+
+    .cell-code {
+      display: block;
+      font-weight: 600;
+      line-height: 1;
+      color: #111;
+      white-space: nowrap;
+      text-align: center;
+      width: 100%;
+    }
+
+    /* Footer row: scale bar left, legend text right */
+    .page-footer {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-top: 5px;
+      font-family: system-ui, sans-serif;
+    }
+
+    /* Legend — small text, right side */
+    .legend {
+      text-align: right;
+      font-size: 6.5pt;
+      color: #bbb;
+    }
+
+    /* 5 cm scale bar — label and bracket on same line */
+    .scale-bar {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .scale-bar-label {
+      font-size: 6pt;
+      color: #111;
+      font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    /* SVG bracket: 50mm wide, 5mm tall */
+    .scale-bracket-svg {
+      display: block;
+      width: 5mm;
+      height: 5mm;
+    }
+
+    /* ── Print ── */
+    @media print {
+      body { background: white; padding: 0; margin: 0; }
+      h1, .controls, .actions, .hint { display: none !important; }
+
+      .preview-wrap {
+        border: none;
+        padding: 0;
+        background: none;
+        max-height: none;
+        overflow: visible;
+        box-shadow: none;
+      }
+
+      .page {
+        padding: 10mm;
+        margin: 0;
+        box-shadow: none;
+        page-break-after: always;
+        page-break-inside: avoid;
+        display: block;
+      }
+
+      .page:last-child { page-break-after: auto; }
+
+      @page { margin: 0; size: var(--page-size, A4); }
+
+      /* Force black and white, suppress backgrounds */
+      * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<h1>Grid Printer</h1>
+
+
+<div class="controls">
+  <div class="field">
+    <label>Paper size</label>
+    <div style="display:flex;gap:6px;margin-top:2px;">
+      <button id="btn-a4" class="primary" onclick="setPaper('A4')" style="padding:5px 14px;font-size:13px;flex:1;">A4</button>
+      <button id="btn-letter" onclick="setPaper('letter')" style="padding:5px 14px;font-size:13px;flex:1;">Letter</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>Country / prefix</label>
+    <select id="country"></select>
+  </div>
+  <div class="field">
+    <label>Start number <span style="font-size:10px;color:#aaa;">(8n+1)</span></label>
+    <input type="number" id="startnum" value="1" min="1" max="99999" step="8">
+  </div>
+  <div class="field">
+    <label>End number <span style="font-size:10px;color:#aaa;">(8n+8)</span></label>
+    <input type="number" id="endnum" value="80" min="8" max="99999" step="8">
+  </div>
+  <div class="field" style="display:none;">
+    <label>Total codes</label>
+    <input type="number" id="total" value="64" min="1" max="9999">
+  </div>
+  <div class="field" style="display:none;">
+    <label>Codes per page</label>
+    <input type="number" id="perpage" value="64" min="8" max="512" step="8">
+  </div>
+  <div class="field" style="display:none;">
+    <label>Cell width (mm)</label>
+    <input type="number" id="cw" value="20" min="10" max="60" step="0.5">
+  </div>
+  <div class="field" style="display:none;">
+    <label>ID row height (mm)</label>
+    <input type="number" id="idh" value="5" min="3" max="20" step="0.5">
+  </div>
+  <div class="field" style="display:none;">
+    <label>Specimen height (mm)</label>
+    <input type="number" id="spech" value="20" min="5" max="100" step="0.5">
+  </div>
+  <div class="field" style="display:none;">
+    <label>Font size (pt)</label>
+    <input type="number" id="fs" value="11" min="4" max="18">
+  </div>
+</div>
+
+<div class="actions">
+  <button class="primary" onclick="buildGrid()">Regenerate</button>
+  <button onclick="doPrint()">Print / Save as PDF</button>
+</div>
+
+<p class="hint">
+  Set print scale to <strong>100% / Actual size</strong> for exact dimensions.
+</p>
+
+<div class="preview-wrap" id="preview-wrap"></div>
+
+<script>
+const COUNTRIES = [
+  { name: "Test",                      code: "TST" },
+  { name: "Afghanistan",               code: "AFG" },
+  { name: "Albania",                   code: "ALB" },
+  { name: "Algeria",                   code: "DZA" },
+  { name: "Andorra",                   code: "AND" },
+  { name: "Angola",                    code: "AGO" },
+  { name: "Argentina",                 code: "ARG" },
+  { name: "Armenia",                   code: "ARM" },
+  { name: "Australia",                 code: "AUS" },
+  { name: "Austria",                   code: "AUT" },
+  { name: "Azerbaijan",                code: "AZE" },
+  { name: "Bahrain",                   code: "BHR" },
+  { name: "Bangladesh",                code: "BGD" },
+  { name: "Belarus",                   code: "BLR" },
+  { name: "Belgium",                   code: "BEL" },
+  { name: "Belize",                    code: "BLZ" },
+  { name: "Benin",                     code: "BEN" },
+  { name: "Bhutan",                    code: "BTN" },
+  { name: "Bolivia",                   code: "BOL" },
+  { name: "Bosnia and Herzegovina",    code: "BIH" },
+  { name: "Botswana",                  code: "BWA" },
+  { name: "Brazil",                    code: "BRA" },
+  { name: "Brunei",                    code: "BRN" },
+  { name: "Bulgaria",                  code: "BGR" },
+  { name: "Burkina Faso",              code: "BFA" },
+  { name: "Burundi",                   code: "BDI" },
+  { name: "Cambodia",                  code: "KHM" },
+  { name: "Cameroon",                  code: "CMR" },
+  { name: "Canada",                    code: "CAN" },
+  { name: "Chad",                      code: "TCD" },
+  { name: "Chile",                     code: "CHL" },
+  { name: "China",                     code: "CHN" },
+  { name: "Colombia",                  code: "COL" },
+  { name: "Congo",                     code: "COG" },
+  { name: "Costa Rica",                code: "CRI" },
+  { name: "Croatia",                   code: "HRV" },
+  { name: "Cuba",                      code: "CUB" },
+  { name: "Cyprus",                    code: "CYP" },
+  { name: "Czech Republic",            code: "CZE" },
+  { name: "Denmark",                   code: "DNK" },
+  { name: "Djibouti",                  code: "DJI" },
+  { name: "Dominican Republic",        code: "DOM" },
+  { name: "Ecuador",                   code: "ECU" },
+  { name: "Egypt",                     code: "EGY" },
+  { name: "El Salvador",               code: "SLV" },
+  { name: "Estonia",                   code: "EST" },
+  { name: "Ethiopia",                  code: "ETH" },
+  { name: "Finland",                   code: "FIN" },
+  { name: "France",                    code: "FRA" },
+  { name: "Gabon",                     code: "GAB" },
+  { name: "Georgia",                   code: "GEO" },
+  { name: "Germany",                   code: "DEU" },
+  { name: "Ghana",                     code: "GHA" },
+  { name: "Greece",                    code: "GRC" },
+  { name: "Guatemala",                 code: "GTM" },
+  { name: "Guinea",                    code: "GIN" },
+  { name: "Haiti",                     code: "HTI" },
+  { name: "Honduras",                  code: "HND" },
+  { name: "Hungary",                   code: "HUN" },
+  { name: "Iceland",                   code: "ISL" },
+  { name: "India",                     code: "IND" },
+  { name: "Indonesia",                 code: "IDN" },
+  { name: "Iran",                      code: "IRN" },
+  { name: "Iraq",                      code: "IRQ" },
+  { name: "Ireland",                   code: "IRL" },
+  { name: "Israel",                    code: "ISR" },
+  { name: "Italy",                     code: "ITA" },
+  { name: "Jamaica",                   code: "JAM" },
+  { name: "Japan",                     code: "JPN" },
+  { name: "Jordan",                    code: "JOR" },
+  { name: "Kazakhstan",                code: "KAZ" },
+  { name: "Kenya",                     code: "KEN" },
+  { name: "Kuwait",                    code: "KWT" },
+  { name: "Kyrgyzstan",                code: "KGZ" },
+  { name: "Laos",                      code: "LAO" },
+  { name: "Latvia",                    code: "LVA" },
+  { name: "Lebanon",                   code: "LBN" },
+  { name: "Libya",                     code: "LBY" },
+  { name: "Lithuania",                 code: "LTU" },
+  { name: "Luxembourg",                code: "LUX" },
+  { name: "Madagascar",                code: "MDG" },
+  { name: "Malawi",                    code: "MWI" },
+  { name: "Malaysia",                  code: "MYS" },
+  { name: "Mali",                      code: "MLI" },
+  { name: "Malta",                     code: "MLT" },
+  { name: "Mauritania",                code: "MRT" },
+  { name: "Mexico",                    code: "MEX" },
+  { name: "Moldova",                   code: "MDA" },
+  { name: "Mongolia",                  code: "MNG" },
+  { name: "Montenegro",                code: "MNE" },
+  { name: "Morocco",                   code: "MAR" },
+  { name: "Mozambique",                code: "MOZ" },
+  { name: "Myanmar",                   code: "MMR" },
+  { name: "Namibia",                   code: "NAM" },
+  { name: "Nepal",                     code: "NPL" },
+  { name: "Netherlands",               code: "NLD" },
+  { name: "New Zealand",               code: "NZL" },
+  { name: "Nicaragua",                 code: "NIC" },
+  { name: "Niger",                     code: "NER" },
+  { name: "Nigeria",                   code: "NGA" },
+  { name: "North Korea",               code: "PRK" },
+  { name: "North Macedonia",           code: "MKD" },
+  { name: "Norway",                    code: "NOR" },
+  { name: "Oman",                      code: "OMN" },
+  { name: "Pakistan",                  code: "PAK" },
+  { name: "Panama",                    code: "PAN" },
+  { name: "Paraguay",                  code: "PRY" },
+  { name: "Peru",                      code: "PER" },
+  { name: "Philippines",               code: "PHL" },
+  { name: "Poland",                    code: "POL" },
+  { name: "Portugal",                  code: "PRT" },
+  { name: "Qatar",                     code: "QAT" },
+  { name: "Romania",                   code: "ROU" },
+  { name: "Russia",                    code: "RUS" },
+  { name: "Rwanda",                    code: "RWA" },
+  { name: "Saudi Arabia",              code: "SAU" },
+  { name: "Senegal",                   code: "SEN" },
+  { name: "Serbia",                    code: "SRB" },
+  { name: "Sierra Leone",              code: "SLE" },
+  { name: "Singapore",                 code: "SGP" },
+  { name: "Slovakia",                  code: "SVK" },
+  { name: "Slovenia",                  code: "SVN" },
+  { name: "Somalia",                   code: "SOM" },
+  { name: "South Africa",              code: "ZAF" },
+  { name: "South Korea",               code: "KOR" },
+  { name: "South Sudan",               code: "SSD" },
+  { name: "Spain",                     code: "ESP" },
+  { name: "Sri Lanka",                 code: "LKA" },
+  { name: "Sudan",                     code: "SDN" },
+  { name: "Sweden",                    code: "SWE" },
+  { name: "Switzerland",               code: "CHE" },
+  { name: "Syria",                     code: "SYR" },
+  { name: "Taiwan",                    code: "TWN" },
+  { name: "Tajikistan",                code: "TJK" },
+  { name: "Tanzania",                  code: "TZA" },
+  { name: "Thailand",                  code: "THA" },
+  { name: "Togo",                      code: "TGO" },
+  { name: "Tunisia",                   code: "TUN" },
+  { name: "Turkey",                    code: "TUR" },
+  { name: "Turkmenistan",              code: "TKM" },
+  { name: "Uganda",                    code: "UGA" },
+  { name: "Ukraine",                   code: "UKR" },
+  { name: "United Arab Emirates",      code: "ARE" },
+  { name: "United Kingdom",            code: "GBR" },
+  { name: "United States",             code: "USA" },
+  { name: "Uruguay",                   code: "URY" },
+  { name: "Uzbekistan",                code: "UZB" },
+  { name: "Venezuela",                 code: "VEN" },
+  { name: "Vietnam",                   code: "VNM" },
+  { name: "Yemen",                     code: "YEM" },
+  { name: "Zambia",                    code: "ZMB" },
+  { name: "Zimbabwe",                  code: "ZWE" },
+];
+
+const sel = document.getElementById('country');
+COUNTRIES.forEach((c, i) => {
+  const opt = document.createElement('option');
+  opt.value = i;
+  opt.textContent = `${c.name} (${c.code})`;
+  sel.appendChild(opt);
+});
+
+// Paper size state
+// A4: 210 x 297 mm  |  Letter: 215.9 x 279.4 mm
+const PAPER = {
+  A4:     { w: 210,   h: 297,   label: 'A4'        },
+  letter: { w: 215.9, h: 279.4, label: 'Letter' },
+};
+let currentPaper = 'A4';
+
+// Inject a dynamic @page rule so the browser prints the right size
+const pageStyleEl = document.createElement('style');
+document.head.appendChild(pageStyleEl);
+
+function setPaper(size) {
+  currentPaper = size;
+  pageStyleEl.textContent = `@page { margin: 0; size: ${size}; }`;
+  document.getElementById('btn-a4').className     = size === 'A4'     ? 'primary' : '';
+  document.getElementById('btn-letter').className = size === 'letter' ? 'primary' : '';
+  buildGrid();
+}
+
+// Init
+setPaper('A4');
+
+function pad(n, digits) {
+  return String(n).padStart(digits, '0');
+}
+
+function buildPageTable(codes, idh, spech, fs) {
+  const COLS = 8;
+  const COL_WIDTHS = [18, 21.5, 21.5, 21.5, 21.5, 21.5, 21.5, 18]; // mm per column
+  const chunks = [];
+  for (let i = 0; i < codes.length; i += COLS) {
+    chunks.push(codes.slice(i, i + COLS));
+  }
+
+  // Fill last chunk to full 8 so borders are complete
+  const last = chunks[chunks.length - 1];
+  while (last.length < COLS) last.push('');
+
+  let html = `<table>`;
+  chunks.forEach(chunk => {
+    // ID row: bordered, centered
+    html += `<tr class="id-row">`;
+    for (let c = 0; c < COLS; c++) {
+      const code = chunk[c] || '';
+      html += `<td style="width:${COL_WIDTHS[c]}mm;height:${idh}mm;">`;
+      if (code) html += `<span class="cell-code" style="font-size:${fs}pt;">${code}</span>`;
+      html += `</td>`;
+    }
+    html += `</tr>`;
+
+    // Specimen row: no internal vertical lines
+    html += `<tr class="spec-row">`;
+    for (let c = 0; c < COLS; c++) {
+      html += `<td style="width:${COL_WIDTHS[c]}mm;height:${spech}mm;"></td>`;
+    }
+    html += `</tr>`;
+  });
+
+  html += `</table>`;
+  return html;
+}
+
+function buildGrid() {
+  const idx    = parseInt(sel.value);
+  const prefix = COUNTRIES[idx].code;
+  const COL_WIDTHS = [18, 21.5, 21.5, 21.5, 21.5, 21.5, 21.5, 18];
+  const idh    = 5;
+  const spech  = 18;
+  const fs     = parseInt(document.getElementById('fs').value) || 11;
+  const COLS   = 8;
+
+  // Start: must be 8n+1 (1, 9, 17, 25, …). Snap input to nearest valid value.
+  let rawStart = parseInt(document.getElementById('startnum').value) || 1;
+  if (rawStart <= 1) {
+    rawStart = 1;
+  } else {
+    // nearest 8n+1: find n such that 8n+1 is closest
+    const n = Math.max(0, Math.round((rawStart - 1) / 8));
+    rawStart = 8 * n + 1;
+  }
+  const start = rawStart;
+
+  // End: must be a multiple of 8 (8, 16, 24, …). Snap to nearest multiple of 8, min 8.
+  let rawEnd = parseInt(document.getElementById('endnum').value) || 64;
+  rawEnd = Math.max(8, Math.round(rawEnd / 8) * 8);
+  // End must be >= start + 7 (at least one full row)
+  if (rawEnd < start + 7) rawEnd = start + 7;
+  const end = rawEnd;
+
+  const total = end - start + 1;
+
+  // 10 rows per page = 80 codes per page, cap at total
+  const perPage = Math.min(80, total);
+  const pp = Math.max(8, Math.floor(perPage / COLS) * COLS);
+
+  const maxNum = start + total - 1;
+  const digits = Math.max(3, String(maxNum).length);
+
+  const allCodes = [];
+  for (let i = 0; i < total; i++) {
+    allCodes.push(prefix + pad(start + i, digits));
+  }
+
+  // Split into pages
+  const pages = [];
+  for (let i = 0; i < allCodes.length; i += pp) {
+    pages.push(allCodes.slice(i, i + pp));
+  }
+
+  const totalPages = pages.length;
+  const gridW = COL_WIDTHS.reduce((a, b) => a + b, 0); // 162mm total
+  const paper = PAPER[currentPaper];
+
+  // Set document title so browser uses it as the PDF filename
+  const firstAllCode = allCodes[0];
+  const lastAllCode  = allCodes[allCodes.length - 1];
+  document.title = `${firstAllCode}-${lastAllCode}`;
+
+  let html = '';
+  pages.forEach((pageCodes, pi) => {
+    const firstCode = pageCodes.filter(Boolean)[0];
+    const lastCode  = [...pageCodes].filter(Boolean).pop();
+
+    html += `<div class="page" style="width:${paper.w}mm;min-height:${paper.h}mm;">`;
+    html += buildPageTable(pageCodes, idh, spech, fs);
+    html += `<div class="page-footer" style="width:${gridW}mm;">`;
+
+    // Left: 5 cm scale bar — label and |_| on same line
+    html += `<div class="scale-bar">`;
+    html += `<span class="scale-bar-label">5 mm</span>`;
+    html += `<svg class="scale-bracket-svg" viewBox="0 0 100 10" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">`;
+    html += `<line x1="0" y1="10" x2="100" y2="10" stroke="#000" stroke-width="1.2"/>`;
+    html += `<line x1="0"   y1="0" x2="0"   y2="10" stroke="#000" stroke-width="1.2"/>`;
+    html += `<line x1="100" y1="0" x2="100" y2="10" stroke="#000" stroke-width="1.2"/>`;
+    html += `</svg>`;
+    html += `</div>`;
+
+    // Right: dimension legend
+    const innerW = COL_WIDTHS[1]; // 22mm inner cols
+    const outerW = COL_WIDTHS[0]; // 18mm outer cols
+    html += `<div class="legend">`;
+    html += `${paper.label} &nbsp;&middot;&nbsp; `;
+    html += `ID: ${innerW}&thinsp;&times;&thinsp;${idh}&nbsp;mm &nbsp;&middot;&nbsp; `;
+    html += `Specimen: (${spech}fl)&thinsp;${innerW}&thinsp;&times;&thinsp;${spech}&nbsp;mm &nbsp;&middot;&nbsp; `;
+    html += `Font: ${fs}pt &nbsp;&middot;&nbsp; `;
+    html += `Page ${pi + 1}/${totalPages} &nbsp;&mdash;&nbsp; ${firstCode}&ndash;${lastCode}`;
+    html += `</div>`;
+
+    html += `</div></div>`;
+  });
+
+  document.getElementById('preview-wrap').innerHTML = html;
+}
+
+document.querySelectorAll('input, select').forEach(el => el.addEventListener('change', buildGrid));
+
+function doPrint() {
+  // Browsers don't expose scale/duplex via JS APIs — these are sandboxed.
+  // Best we can do: inject a @page rule for the correct size, force grayscale
+  // via CSS filter on the preview content, and remind the user via the title bar.
+  // The document title is already set to the code range for the PDF filename.
+
+  // Apply grayscale filter to entire page content during print
+  const style = document.createElement('style');
+  style.id = 'print-enforce';
+  style.textContent = `
+    @media print {
+      .page { filter: grayscale(100%); }
+    }
+  `;
+  document.head.appendChild(style);
+
+  window.print();
+
+  // Clean up after dialog closes
+  setTimeout(() => {
+    const s = document.getElementById('print-enforce');
+    if (s) s.remove();
+  }, 1000);
+}
+</script>
+</body>
+</html>
