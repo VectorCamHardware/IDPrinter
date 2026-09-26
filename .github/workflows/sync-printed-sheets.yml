@@ -1,1 +1,53 @@
+# Copies the print log from the Google Sheet into data/printed_sheets.csv.
+# Setup: see README.md, section "Print log".
+name: Sync printed sheets
 
+on:
+  schedule:
+    - cron: "23 */6 * * *" # every 6 hours (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-printed-sheets
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download print log
+        env:
+          PRINT_LOG_URL: ${{ secrets.PRINT_LOG_URL }}
+          PRINT_LOG_TOKEN: ${{ secrets.PRINT_LOG_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRINT_LOG_URL}" ] || [ -z "${PRINT_LOG_TOKEN}" ]; then
+            echo "::error::Repository secrets PRINT_LOG_URL and PRINT_LOG_TOKEN must be set."
+            exit 1
+          fi
+          curl -fsSL --retry 3 --get \
+            --data-urlencode "action=csv" \
+            --data-urlencode "token=${PRINT_LOG_TOKEN}" \
+            "${PRINT_LOG_URL}" -o "${RUNNER_TEMP}/printed_sheets.csv"
+
+      - name: Validate print log
+        run: python3 scripts/validate_print_log.py "${RUNNER_TEMP}/printed_sheets.csv"
+
+      - name: Commit changes
+        run: |
+          set -euo pipefail
+          cp "${RUNNER_TEMP}/printed_sheets.csv" data/printed_sheets.csv
+          if [ -z "$(git status --porcelain -- data/printed_sheets.csv)" ]; then
+            echo "The print log has not changed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/printed_sheets.csv
+          git commit -m "Sync printed sheets log"
+          git push
