@@ -133,6 +133,17 @@
 
     .print-blocked { display: none; }
 
+    /* Print log status line under the buttons */
+    .log-status {
+      font-size: 12px;
+      color: #444;
+      margin-bottom: 1rem;
+      min-height: 1em;
+    }
+
+    .log-status.error { color: #b52b27; }
+    .log-status.ok { color: #2b6e2f; }
+
     .hint { font-size: 12px; color: #888; margin-bottom: 1rem; }
 
     .preview-wrap {
@@ -232,16 +243,17 @@
     /* ── Print ── */
     @media print {
       body { background: white; padding: 0; margin: 0; }
-      h1, .controls, .actions, .hint, .locked-notice { display: none !important; }
+      h1, .controls, .actions, .hint, .locked-notice, .log-status { display: none !important; }
 
-      /* Printing without a name and program produces only a notice */
-      body:not(.ready) .preview-wrap { display: none !important; }
-      body:not(.ready) .print-blocked {
+      /* Sheets print only through the Print button, after the print log accepts the range.
+         Printing any other way (for example Ctrl+P) produces only a notice. */
+      body:not(.print-authorized) .preview-wrap { display: none !important; }
+      body:not(.print-authorized) .print-blocked {
         display: block !important;
         padding: 20mm;
         font-size: 14pt;
       }
-      body.ready .print-blocked { display: none !important; }
+      body.print-authorized .print-blocked { display: none !important; }
 
       .preview-wrap {
         border: none;
@@ -344,8 +356,13 @@
   <button id="btn-print" onclick="doPrint()" disabled>Print / Save as PDF</button>
 </div>
 
+<p class="log-status" id="log-status" role="status" aria-live="polite"></p>
+
 <p class="hint">
   Name and program are required before the sheet can be regenerated or printed.
+</p>
+<p class="hint">
+  Each printed range is recorded in the print log. A range that has already been printed cannot be printed again.
 </p>
 
 <p class="hint">
@@ -361,7 +378,7 @@
 </div>
 
 <div class="print-blocked">
-  Printing is unavailable. Enter a name and program in the ID Printer, then use the Print / Save as PDF button.
+  Printing is available only through the Print / Save as PDF button in the ID Printer, after a name and program are entered. Each printed range is recorded in the print log.
 </div>
 
 <script>
@@ -574,15 +591,69 @@ function updateReadyState() {
   const ready = fieldsReady();
   document.body.classList.toggle('ready', ready);
   document.getElementById('btn-regen').disabled = !ready;
-  document.getElementById('btn-print').disabled = !ready;
+  document.getElementById('btn-print').disabled = !ready || !API_URL || logBusy;
   nameEl.classList.toggle('missing', !nameEl.value.trim());
   programEl.classList.toggle('missing', !programEl.value.trim());
   return ready;
 }
 
+// ── Print log ──
+// Web app URL of the print log (Google Apps Script deployment ending in /exec). See README.md.
+const API_URL = 'https://script.google.com/macros/s/AKfycbx_C56RZB1SKk92XoK2_m5tmUiSHD1-GjKCzkz-pQIKgMrN86VJzrA1fmn-i3qzKTkebg/exec';
+
+let printRecord = null;   // record returned by the print log for the print in progress
+let logBusy = false;      // true while a request to the print log is pending
+let currentRange = null;  // range shown in the preview, set by buildGrid()
+
+function setStatus(message, kind) {
+  const el = document.getElementById('log-status');
+  el.textContent = message || '';
+  el.className = 'log-status' + (kind ? ' ' + kind : '');
+}
+
+async function logRequest(method, payload) {
+  let res;
+  if (method === 'GET') {
+    res = await fetch(API_URL + '?' + new URLSearchParams(payload).toString());
+  } else {
+    // text/plain avoids a CORS preflight, which Apps Script does not answer.
+    res = await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+  }
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+// Sets the start number to `nextStart` and keeps the current range length.
+function moveToStart(nextStart) {
+  const startEl = document.getElementById('startnum');
+  const endEl = document.getElementById('endnum');
+  const length = currentRange ? currentRange.end - currentRange.start + 1 : 80;
+  startEl.value = nextStart;
+  endEl.value = nextStart + length - 1;
+  buildGrid();
+}
+
+// Asks the print log for the next free start number of the selected prefix.
+async function loadNextStart() {
+  if (!API_URL) return;
+  const prefix = COUNTRIES[parseInt(sel.value)].code;
+  try {
+    const res = await logRequest('GET', { action: 'next', prefix: prefix });
+    if (res.ok && res.prefix === COUNTRIES[parseInt(sel.value)].code) {
+      moveToStart(res.next_start);
+      setStatus(`The next unprinted ${prefix} range starts at ${res.next_start}.`);
+    }
+  } catch (err) {
+    setStatus('The print log could not be reached. Printing requires a connection to the print log.', 'error');
+  }
+}
+
 // Init
 setPaper('A4');
 updateReadyState();
+if (!API_URL) {
+  setStatus('The print log is not configured. Printing is unavailable until API_URL is set in index.html.', 'error');
+}
 
 function pad(n, digits) {
   return String(n).padStart(digits, '0');
@@ -669,6 +740,10 @@ function buildGrid() {
 
   const total = end - start + 1;
 
+  // Show the snapped values, so the fields match the range that is printed and logged
+  document.getElementById('startnum').value = start;
+  document.getElementById('endnum').value = end;
+
   // 10 rows per page = 80 codes per page, cap at total
   const perPage = Math.min(80, total);
   const pp = Math.max(8, Math.floor(perPage / COLS) * COLS);
@@ -688,6 +763,11 @@ function buildGrid() {
   }
 
   const totalPages = pages.length;
+  currentRange = { prefix, start, end, pages: totalPages, paper: PAPER[currentPaper].label };
+
+  // The print ID is shown only on the sheet that the print log has accepted
+  const record = printRecord && printRecord.prefix === prefix &&
+    printRecord.start === start && printRecord.end === end ? printRecord : null;
   const gridW = COL_WIDTHS.reduce((a, b) => a + b, 0); // 162mm total
   const paper = PAPER[currentPaper];
 
@@ -728,6 +808,7 @@ function buildGrid() {
     const op = operatorInfo();
     html += `<div class="page-operator">`;
     html += `Name: ${escapeHtml(op.name || '—')} &nbsp;&middot;&nbsp; Program: ${escapeHtml(op.program || '—')}`;
+    if (record) html += ` &nbsp;&middot;&nbsp; Print ID: ${escapeHtml(record.print_id)}`;
     html += `</div>`;
 
     html += `</div>`;
@@ -743,16 +824,77 @@ document.querySelectorAll('input, select').forEach(el => el.addEventListener('ch
 // Name and program update the button state while typing; the sheet updates on Regenerate or on leaving the field.
 [nameEl, programEl].forEach(el => el.addEventListener('input', updateReadyState));
 
-function doPrint() {
-  if (!updateReadyState()) return;
+// A new prefix starts at its next unprinted number
+sel.addEventListener('change', loadNextStart);
+
+function setBusy(busy) {
+  logBusy = busy;
+  updateReadyState();
+}
+
+let afterPrintStep = null; // runs once the print dialog closes
+
+// Removes the print authorization once the print dialog closes, so the sheet cannot be printed again.
+function endPrint() {
+  document.body.classList.remove('print-authorized');
+  const s = document.getElementById('print-enforce');
+  if (s) s.remove();
+  if (afterPrintStep) {
+    const step = afterPrintStep;
+    afterPrintStep = null;
+    step();
+  }
+}
+window.addEventListener('afterprint', endPrint);
+
+async function doPrint() {
+  if (!updateReadyState() || logBusy || !API_URL) return;
   buildGrid(); // ensure the printed name and program match the fields
 
-  // Browsers don't expose scale/duplex via JS APIs — these are sandboxed.
-  // Best we can do: inject a @page rule for the correct size, force grayscale
-  // via CSS filter on the preview content, and remind the user via the title bar.
-  // The document title is already set to the code range for the PDF filename.
+  const op = operatorInfo();
+  const range = currentRange;
+  setBusy(true);
+  setStatus('Checking the print log.');
 
-  // Apply grayscale filter to entire page content during print
+  let res;
+  try {
+    res = await logRequest('POST', {
+      action: 'reserve',
+      name: op.name,
+      program: op.program,
+      prefix: range.prefix,
+      start: range.start,
+      end: range.end,
+      pages: range.pages,
+      paper: range.paper,
+    });
+  } catch (err) {
+    setBusy(false);
+    setStatus('The print log could not be reached. The sheet was not printed.', 'error');
+    return;
+  }
+  setBusy(false);
+
+  if (!res.ok) {
+    if (res.error === 'overlap') {
+      const c = res.conflict;
+      const when = c.timestamp_utc.replace('T', ' ').replace('Z', ' UTC');
+      moveToStart(res.next_start);
+      setStatus(`Not printed. ${c.first_code}–${c.last_code} was printed by ${c.name} (${c.program}) on ${when}, print ID ${c.print_id}. ` +
+        `The range has been moved to the next unprinted start number, ${res.next_start}.`, 'error');
+    } else {
+      setStatus(`Not printed. ${res.message || 'The print log refused the request.'}`, 'error');
+    }
+    return;
+  }
+
+  // The range is logged: show the print ID on the sheet and print it
+  printRecord = res.record;
+  buildGrid();
+
+  // Browsers do not expose scale or duplex settings to scripts. The @page rule sets the
+  // paper size, and the filter below forces grayscale. The document title (the code
+  // range) becomes the PDF file name.
   const style = document.createElement('style');
   style.id = 'print-enforce';
   style.textContent = `
@@ -761,15 +903,22 @@ function doPrint() {
     }
   `;
   document.head.appendChild(style);
+  document.body.classList.add('print-authorized');
 
+  const r = res.record;
+  afterPrintStep = () => {
+    printRecord = null;
+    moveToStart(res.next_start);
+    setStatus(`Logged as print ${r.print_id}: ${r.first_code}–${r.last_code}. ` +
+      `The next unprinted ${r.prefix} range starts at ${res.next_start}.`, 'ok');
+  };
+
+  // The afterprint event (fired when the dialog closes) calls endPrint().
   window.print();
-
-  // Clean up after dialog closes
-  setTimeout(() => {
-    const s = document.getElementById('print-enforce');
-    if (s) s.remove();
-  }, 1000);
 }
+
+// Start at the next unprinted number for the initial prefix
+loadNextStart();
 </script>
 </body>
 </html>
