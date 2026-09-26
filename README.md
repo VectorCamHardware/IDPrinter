@@ -1,6 +1,6 @@
 # IDPrinter
 
-Generates printable specimen ID sheets for VectorCam. Each sheet has rows of ID labels (for example `UGA001`–`UGA080`), a 15 mm reference ruler, and the name and program of the person who printed it.
+Generates printable specimen ID sheets for VectorCam. Each sheet has rows of ID labels (for example `UGA001`–`UGA080`), a 15 mm reference, and the name / program of the person who printed it.
 
 ## Print log
 
@@ -21,19 +21,6 @@ index.html ──reserve──▶ Apps Script web app ──▶ Google Sheet ("L
 - **Print ID:** each logged print receives an ID (for example `P-3F9A1C2B`), which is printed in the bottom margin of each page next to the name and program.
 - **Test prefix:** `TST` ranges are logged but may be printed more than once (`REPRINT_ALLOWED` in `Code.gs`).
 
-### Setup
-
-1. Create a Google Sheet in the account that should own the log, for example "ID Printer print log".
-2. In the sheet, open **Extensions → Apps Script**. Replace the contents of `Code.gs` with `apps-script/Code.gs` from this repository and save.
-3. In the Apps Script editor, open **Project Settings → Script properties** and add `EXPORT_TOKEN` with a long random value. The token protects the CSV export.
-4. Select **Deploy → New deployment → Web app**. Set **Execute as** to **Me** and **Who has access** to **Anyone**. Deploy, authorize the requested access, and copy the web app URL ending in `/exec`.
-5. In `index.html`, set `API_URL` to the web app URL and commit. Until `API_URL` is set, the Print button is disabled.
-6. In the GitHub repository, open **Settings → Secrets and variables → Actions** and add two repository secrets:
-   - `PRINT_LOG_URL`: the web app URL.
-   - `PRINT_LOG_TOKEN`: the value of `EXPORT_TOKEN`.
-7. Open **Actions → Sync printed sheets → Run workflow** to confirm that the export works.
-
-To update the backend after changing `Code.gs`, use **Deploy → Manage deployments → Edit → Version: New version**. This keeps the same URL.
 
 ### CSV columns
 
