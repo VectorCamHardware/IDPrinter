@@ -18,10 +18,21 @@
     h1 { font-size: 18px; font-weight: 500; margin-bottom: 1.25rem; }
 
     .controls {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+      display: flex;
+      flex-direction: column;
       gap: 10px;
       margin-bottom: 1rem;
+    }
+
+    /* Each row holds up to three fields in fixed-width columns */
+    .controls-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(155px, 220px));
+      gap: 10px;
+    }
+
+    @media (max-width: 560px) {
+      .controls-row { grid-template-columns: 1fr; }
     }
 
     .field { display: flex; flex-direction: column; gap: 4px; }
@@ -68,6 +79,59 @@
     }
 
     button.primary:hover { background: #333; }
+
+    button:disabled,
+    button:disabled:hover {
+      background: #e6e6e6;
+      color: #999;
+      border-color: #ddd;
+      cursor: not-allowed;
+    }
+
+    .field input.missing { border-color: #d9534f; }
+
+    .required { color: #d9534f; }
+
+    /* Preview is grayed out and locked until name and program are entered */
+    .preview-outer { position: relative; }
+
+    body:not(.ready) .preview-wrap {
+      filter: grayscale(100%);
+      opacity: 0.35;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .locked-notice {
+      display: none;
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 13px;
+      color: #444;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+      z-index: 2;
+      white-space: nowrap;
+    }
+
+    body:not(.ready) .locked-notice { display: block; }
+
+    /* Operator line in the bottom margin of each page */
+    .page-operator {
+      position: absolute;
+      left: 10mm;
+      bottom: 6mm;
+      font-size: 7pt;
+      color: #111;
+      white-space: nowrap;
+    }
+
+    .print-blocked { display: none; }
 
     .hint { font-size: 12px; color: #888; margin-bottom: 1rem; }
 
@@ -168,7 +232,16 @@
     /* ── Print ── */
     @media print {
       body { background: white; padding: 0; margin: 0; }
-      h1, .controls, .actions, .hint { display: none !important; }
+      h1, .controls, .actions, .hint, .locked-notice { display: none !important; }
+
+      /* Printing without a name and program produces only a notice */
+      body:not(.ready) .preview-wrap { display: none !important; }
+      body:not(.ready) .print-blocked {
+        display: block !important;
+        padding: 20mm;
+        font-size: 14pt;
+      }
+      body.ready .print-blocked { display: none !important; }
 
       .preview-wrap {
         border: none;
@@ -207,24 +280,38 @@
 
 
 <div class="controls">
-  <div class="field">
-    <label>Paper size</label>
-    <div style="display:flex;gap:6px;margin-top:2px;">
-      <button id="btn-a4" class="primary" onclick="setPaper('A4')" style="padding:5px 14px;font-size:13px;flex:1;">A4</button>
-      <button id="btn-letter" onclick="setPaper('letter')" style="padding:5px 14px;font-size:13px;flex:1;">Letter</button>
+  <div class="controls-row">
+    <div class="field">
+      <label for="opname">Name <span class="required">*</span></label>
+      <input type="text" id="opname" maxlength="60" autocomplete="name" placeholder="Full name">
+    </div>
+    <div class="field">
+      <label for="program">Program <span class="required">*</span></label>
+      <input type="text" id="program" maxlength="60" placeholder="Program">
     </div>
   </div>
-  <div class="field">
-    <label>Country / prefix</label>
-    <select id="country"></select>
+  <div class="controls-row">
+    <div class="field">
+      <label>Country / prefix</label>
+      <select id="country"></select>
+    </div>
+    <div class="field">
+      <label>Start number <span style="font-size:10px;color:#aaa;">(8n+1)</span></label>
+      <input type="number" id="startnum" value="1" min="1" max="99999" step="8">
+    </div>
+    <div class="field">
+      <label>End number <span style="font-size:10px;color:#aaa;">(8n+8)</span></label>
+      <input type="number" id="endnum" value="80" min="8" max="99999" step="8">
+    </div>
   </div>
-  <div class="field">
-    <label>Start number <span style="font-size:10px;color:#aaa;">(8n+1)</span></label>
-    <input type="number" id="startnum" value="1" min="1" max="99999" step="8">
-  </div>
-  <div class="field">
-    <label>End number <span style="font-size:10px;color:#aaa;">(8n+8)</span></label>
-    <input type="number" id="endnum" value="80" min="8" max="99999" step="8">
+  <div class="controls-row">
+    <div class="field">
+      <label>Paper size</label>
+      <div style="display:flex;gap:6px;margin-top:2px;">
+        <button id="btn-a4" class="primary" onclick="setPaper('A4')" style="padding:5px 14px;font-size:13px;flex:1;">A4</button>
+        <button id="btn-letter" onclick="setPaper('letter')" style="padding:5px 14px;font-size:13px;flex:1;">Letter</button>
+      </div>
+    </div>
   </div>
   <div class="field" style="display:none;">
     <label>Total codes</label>
@@ -253,9 +340,13 @@
 </div>
 
 <div class="actions">
-  <button class="primary" onclick="buildGrid()">Regenerate</button>
-  <button onclick="doPrint()">Print / Save as PDF</button>
+  <button id="btn-regen" class="primary" onclick="buildGrid()" disabled>Regenerate</button>
+  <button id="btn-print" onclick="doPrint()" disabled>Print / Save as PDF</button>
 </div>
+
+<p class="hint">
+  Name and program are required before the sheet can be regenerated or printed.
+</p>
 
 <p class="hint">
   Set print scale to <strong>100% / Actual size</strong> for exact dimensions.
@@ -264,7 +355,14 @@
   Default A4 sizing if printing internationally. Default Letter sizing if printing in the US.
 </p>
 
-<div class="preview-wrap" id="preview-wrap"></div>
+<div class="preview-outer">
+  <div class="locked-notice" id="locked-notice">Enter a name and program to enable the preview.</div>
+  <div class="preview-wrap" id="preview-wrap"></div>
+</div>
+
+<div class="print-blocked">
+  Printing is unavailable. Enter a name and program in the ID Printer, then use the Print / Save as PDF button.
+</div>
 
 <script>
 const COUNTRIES = [
@@ -452,8 +550,39 @@ function setPaper(size) {
   buildGrid();
 }
 
+// ── Required operator fields (name, program) ──
+const nameEl    = document.getElementById('opname');
+const programEl = document.getElementById('program');
+
+function operatorInfo() {
+  return { name: nameEl.value.trim(), program: programEl.value.trim() };
+}
+
+function fieldsReady() {
+  const { name, program } = operatorInfo();
+  return name.length > 0 && program.length > 0;
+}
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[ch]);
+}
+
+// Enables or disables the buttons and the preview according to the required fields.
+function updateReadyState() {
+  const ready = fieldsReady();
+  document.body.classList.toggle('ready', ready);
+  document.getElementById('btn-regen').disabled = !ready;
+  document.getElementById('btn-print').disabled = !ready;
+  nameEl.classList.toggle('missing', !nameEl.value.trim());
+  programEl.classList.toggle('missing', !programEl.value.trim());
+  return ready;
+}
+
 // Init
 setPaper('A4');
+updateReadyState();
 
 function pad(n, digits) {
   return String(n).padStart(digits, '0');
@@ -593,15 +722,31 @@ function buildGrid() {
     html += `Page ${pi + 1}/${totalPages} &nbsp;&mdash;&nbsp; ${firstCode}&ndash;${lastCode}`;
     html += `</div>`;
 
-    html += `</div></div>`;
+    html += `</div>`;
+
+    // Bottom margin: name and program of the person who generated the sheet
+    const op = operatorInfo();
+    html += `<div class="page-operator">`;
+    html += `Name: ${escapeHtml(op.name || '—')} &nbsp;&middot;&nbsp; Program: ${escapeHtml(op.program || '—')}`;
+    html += `</div>`;
+
+    html += `</div>`;
   });
 
   document.getElementById('preview-wrap').innerHTML = html;
 }
 
-document.querySelectorAll('input, select').forEach(el => el.addEventListener('change', buildGrid));
+document.querySelectorAll('input, select').forEach(el => el.addEventListener('change', () => {
+  if (updateReadyState()) buildGrid();
+}));
+
+// Name and program update the button state while typing; the sheet updates on Regenerate or on leaving the field.
+[nameEl, programEl].forEach(el => el.addEventListener('input', updateReadyState));
 
 function doPrint() {
+  if (!updateReadyState()) return;
+  buildGrid(); // ensure the printed name and program match the fields
+
   // Browsers don't expose scale/duplex via JS APIs — these are sandboxed.
   // Best we can do: inject a @page rule for the correct size, force grayscale
   // via CSS filter on the preview content, and remind the user via the title bar.
