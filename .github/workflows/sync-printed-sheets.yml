@@ -36,7 +36,9 @@ jobs:
             "${PRINT_LOG_URL}" -o "${RUNNER_TEMP}/printed_sheets.csv"
 
       - name: Validate print log
-        run: python3 scripts/validate_print_log.py "${RUNNER_TEMP}/printed_sheets.csv"
+        run: |
+          python3 scripts/validate_print_log.py "${RUNNER_TEMP}/printed_sheets.csv"
+          python3 scripts/validate_print_log.py data/synced_sheets.csv
 
       - name: Commit changes
         run: |

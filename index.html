@@ -90,6 +90,24 @@
 
     .field input.missing { border-color: #d9534f; }
 
+    .field input[readonly],
+    .field input:disabled { background: #eee; color: #555; }
+
+    .mode-options { display: flex; gap: 16px; align-items: center; min-height: 31px; }
+
+    .field .mode-option {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #111;
+      text-transform: none;
+      letter-spacing: 0;
+      cursor: pointer;
+    }
+
+    .field .mode-option input { width: auto; margin: 0; }
+
     .required { color: #d9534f; }
 
     /* Preview is grayed out and locked until name and program are entered */
@@ -304,19 +322,26 @@
   </div>
   <div class="controls-row">
     <div class="field">
-      <label>Country / prefix</label>
-      <select id="country"></select>
+      <label>Prefix mode</label>
+      <div class="mode-options" role="group" aria-label="Prefix mode">
+        <label class="mode-option"><input type="checkbox" id="mode-auto" checked> Auto</label>
+        <label class="mode-option"><input type="checkbox" id="mode-test"> Test</label>
+      </div>
     </div>
     <div class="field">
-      <label>Start number <span style="font-size:10px;color:#aaa;">(8n+1)</span></label>
-      <input type="number" id="startnum" value="1" min="1" max="99999" step="8">
-    </div>
-    <div class="field">
-      <label>End number <span style="font-size:10px;color:#aaa;">(8n+8)</span></label>
-      <input type="number" id="endnum" value="80" min="8" max="99999" step="8">
+      <label for="prefix">Prefix</label>
+      <input type="text" id="prefix" readonly tabindex="-1" value="">
     </div>
   </div>
   <div class="controls-row">
+    <div class="field">
+      <label for="startnum">Start number <span style="font-size:10px;color:#aaa;">(8n+1)</span></label>
+      <input type="number" id="startnum" value="1" min="1" max="99999" step="8">
+    </div>
+    <div class="field">
+      <label for="endnum">End number <span style="font-size:10px;color:#aaa;">(8n+8)</span></label>
+      <input type="number" id="endnum" value="80" min="8" max="992" step="8">
+    </div>
     <div class="field">
       <label>Paper size</label>
       <div style="display:flex;gap:6px;margin-top:2px;">
@@ -362,7 +387,13 @@
   Name and program are required before the sheet can be regenerated or printed.
 </p>
 <p class="hint">
-  Each printed range is recorded in the print log. A range that has already been printed cannot be printed again.
+  Auto assigns the next unused prefix in alphabetical order, with codes starting at 001. Each auto prefix is printed once.
+</p>
+<p class="hint">
+  Test uses the prefix TST. Test ranges may be printed more than once.
+</p>
+<p class="hint">
+  Each print is recorded in the print log.
 </p>
 
 <p class="hint">
@@ -382,170 +413,39 @@
 </div>
 
 <script>
-const COUNTRIES = [
-  { name: "Test",                      code: "TST" },
-  { name: "Afghanistan",               code: "AFG" },
-  { name: "Albania",                   code: "ALB" },
-  { name: "Algeria",                   code: "DZA" },
-  { name: "Andorra",                   code: "AND" },
-  { name: "Angola",                    code: "AGO" },
-  { name: "Argentina",                 code: "ARG" },
-  { name: "Armenia",                   code: "ARM" },
-  { name: "Australia",                 code: "AUS" },
-  { name: "Austria",                   code: "AUT" },
-  { name: "Azerbaijan",                code: "AZE" },
-  { name: "Bahrain",                   code: "BHR" },
-  { name: "Bangladesh",                code: "BGD" },
-  { name: "Belarus",                   code: "BLR" },
-  { name: "Belgium",                   code: "BEL" },
-  { name: "Belize",                    code: "BLZ" },
-  { name: "Benin",                     code: "BEN" },
-  { name: "Bhutan",                    code: "BTN" },
-  { name: "Bolivia",                   code: "BOL" },
-  { name: "Bosnia and Herzegovina",    code: "BIH" },
-  { name: "Botswana",                  code: "BWA" },
-  { name: "Brazil",                    code: "BRA" },
-  { name: "Brunei",                    code: "BRN" },
-  { name: "Bulgaria",                  code: "BGR" },
-  { name: "Burkina Faso",              code: "BFA" },
-  { name: "Burundi",                   code: "BDI" },
-  { name: "Cambodia",                  code: "KHM" },
-  { name: "Cameroon",                  code: "CMR" },
-  { name: "Canada",                    code: "CAN" },
-  { name: "Chad",                      code: "TCD" },
-  { name: "Chile",                     code: "CHL" },
-  { name: "China",                     code: "CHN" },
-  { name: "Colombia",                  code: "COL" },
-  { name: "Congo",                     code: "COG" },
-  { name: "Costa Rica",                code: "CRI" },
-  { name: "Croatia",                   code: "HRV" },
-  { name: "Cuba",                      code: "CUB" },
-  { name: "Cyprus",                    code: "CYP" },
-  { name: "Czech Republic",            code: "CZE" },
-  { name: "Denmark",                   code: "DNK" },
-  { name: "Djibouti",                  code: "DJI" },
-  { name: "Dominican Republic",        code: "DOM" },
-  { name: "Ecuador",                   code: "ECU" },
-  { name: "Egypt",                     code: "EGY" },
-  { name: "El Salvador",               code: "SLV" },
-  { name: "Estonia",                   code: "EST" },
-  { name: "Ethiopia",                  code: "ETH" },
-  { name: "Finland",                   code: "FIN" },
-  { name: "France",                    code: "FRA" },
-  { name: "Gabon",                     code: "GAB" },
-  { name: "Georgia",                   code: "GEO" },
-  { name: "Germany",                   code: "DEU" },
-  { name: "Ghana",                     code: "GHA" },
-  { name: "Greece",                    code: "GRC" },
-  { name: "Guatemala",                 code: "GTM" },
-  { name: "Guinea",                    code: "GIN" },
-  { name: "Haiti",                     code: "HTI" },
-  { name: "Honduras",                  code: "HND" },
-  { name: "Hungary",                   code: "HUN" },
-  { name: "Iceland",                   code: "ISL" },
-  { name: "India",                     code: "IND" },
-  { name: "Indonesia",                 code: "IDN" },
-  { name: "Iran",                      code: "IRN" },
-  { name: "Iraq",                      code: "IRQ" },
-  { name: "Ireland",                   code: "IRL" },
-  { name: "Israel",                    code: "ISR" },
-  { name: "Italy",                     code: "ITA" },
-  { name: "Jamaica",                   code: "JAM" },
-  { name: "Japan",                     code: "JPN" },
-  { name: "Jordan",                    code: "JOR" },
-  { name: "Kazakhstan",                code: "KAZ" },
-  { name: "Kenya",                     code: "KEN" },
-  { name: "Kuwait",                    code: "KWT" },
-  { name: "Kyrgyzstan",                code: "KGZ" },
-  { name: "Laos",                      code: "LAO" },
-  { name: "Latvia",                    code: "LVA" },
-  { name: "Lebanon",                   code: "LBN" },
-  { name: "Libya",                     code: "LBY" },
-  { name: "Lithuania",                 code: "LTU" },
-  { name: "Luxembourg",                code: "LUX" },
-  { name: "Madagascar",                code: "MDG" },
-  { name: "Malawi",                    code: "MWI" },
-  { name: "Malaysia",                  code: "MYS" },
-  { name: "Mali",                      code: "MLI" },
-  { name: "Malta",                     code: "MLT" },
-  { name: "Mauritania",                code: "MRT" },
-  { name: "Mexico",                    code: "MEX" },
-  { name: "Moldova",                   code: "MDA" },
-  { name: "Mongolia",                  code: "MNG" },
-  { name: "Montenegro",                code: "MNE" },
-  { name: "Morocco",                   code: "MAR" },
-  { name: "Mozambique",                code: "MOZ" },
-  { name: "Myanmar",                   code: "MMR" },
-  { name: "Namibia",                   code: "NAM" },
-  { name: "Nepal",                     code: "NPL" },
-  { name: "Netherlands",               code: "NLD" },
-  { name: "New Zealand",               code: "NZL" },
-  { name: "Nicaragua",                 code: "NIC" },
-  { name: "Niger",                     code: "NER" },
-  { name: "Nigeria",                   code: "NGA" },
-  { name: "North Korea",               code: "PRK" },
-  { name: "North Macedonia",           code: "MKD" },
-  { name: "Norway",                    code: "NOR" },
-  { name: "Oman",                      code: "OMN" },
-  { name: "Pakistan",                  code: "PAK" },
-  { name: "Panama",                    code: "PAN" },
-  { name: "Paraguay",                  code: "PRY" },
-  { name: "Peru",                      code: "PER" },
-  { name: "Philippines",               code: "PHL" },
-  { name: "Poland",                    code: "POL" },
-  { name: "Portugal",                  code: "PRT" },
-  { name: "Qatar",                     code: "QAT" },
-  { name: "Romania",                   code: "ROU" },
-  { name: "Russia",                    code: "RUS" },
-  { name: "Rwanda",                    code: "RWA" },
-  { name: "Saudi Arabia",              code: "SAU" },
-  { name: "Senegal",                   code: "SEN" },
-  { name: "Serbia",                    code: "SRB" },
-  { name: "Sierra Leone",              code: "SLE" },
-  { name: "Singapore",                 code: "SGP" },
-  { name: "Slovakia",                  code: "SVK" },
-  { name: "Slovenia",                  code: "SVN" },
-  { name: "Somalia",                   code: "SOM" },
-  { name: "South Africa",              code: "ZAF" },
-  { name: "South Korea",               code: "KOR" },
-  { name: "South Sudan",               code: "SSD" },
-  { name: "Spain",                     code: "ESP" },
-  { name: "Sri Lanka",                 code: "LKA" },
-  { name: "Sudan",                     code: "SDN" },
-  { name: "Sweden",                    code: "SWE" },
-  { name: "Switzerland",               code: "CHE" },
-  { name: "Syria",                     code: "SYR" },
-  { name: "Taiwan",                    code: "TWN" },
-  { name: "Tajikistan",                code: "TJK" },
-  { name: "Tanzania",                  code: "TZA" },
-  { name: "Thailand",                  code: "THA" },
-  { name: "Togo",                      code: "TGO" },
-  { name: "Tunisia",                   code: "TUN" },
-  { name: "Turkey",                    code: "TUR" },
-  { name: "Turkmenistan",              code: "TKM" },
-  { name: "Uganda",                    code: "UGA" },
-  { name: "Ukraine",                   code: "UKR" },
-  { name: "United Arab Emirates",      code: "ARE" },
-  { name: "United Kingdom",            code: "GBR" },
-  { name: "United States",             code: "USA" },
-  { name: "Uruguay",                   code: "URY" },
-  { name: "Uzbekistan",                code: "UZB" },
-  { name: "Venezuela",                 code: "VEN" },
-  { name: "Vietnam",                   code: "VNM" },
-  { name: "Yemen",                     code: "YEM" },
-  { name: "Zambia",                    code: "ZMB" },
-  { name: "Zimbabwe",                  code: "ZWE" },
-  { name: "VectorCam",                 code: "CAM"},
-  { name: "Johns Hopkins",             code: "JHU"},
-];
+// Prefix mode: 'auto' (prefix assigned by the print log) or 'test' (prefix TST, repeats allowed).
+const TEST_PREFIX = 'TST';
+const AUTO_MAX_END = 992;   // auto codes keep three digits
+const modeAutoEl = document.getElementById('mode-auto');
+const modeTestEl = document.getElementById('mode-test');
+let mode = 'auto';
+let autoPrefix = '';        // prefix the next auto print receives, from the print log
 
-const sel = document.getElementById('country');
-COUNTRIES.forEach((c, i) => {
-  const opt = document.createElement('option');
-  opt.value = i;
-  opt.textContent = `${c.name} (${c.code})`;
-  sel.appendChild(opt);
-});
+function currentPrefix() {
+  return mode === 'test' ? TEST_PREFIX : autoPrefix;
+}
+
+// The two checkboxes are exclusive: checking one clears the other, and one stays checked.
+function setMode(next) {
+  mode = next;
+  modeAutoEl.checked = next === 'auto';
+  modeTestEl.checked = next === 'test';
+  const startEl = document.getElementById('startnum');
+  const endEl = document.getElementById('endnum');
+  startEl.disabled = next === 'auto';
+  endEl.max = next === 'auto' ? AUTO_MAX_END : 99999;
+  if (next === 'auto') {
+    const length = Math.min(AUTO_MAX_END, Math.max(8, (parseInt(endEl.value) || 80) - (parseInt(startEl.value) || 1) + 1));
+    startEl.value = 1;
+    endEl.value = length;
+  }
+  updateReadyState();
+  buildGrid();
+  loadNext();
+}
+
+modeAutoEl.addEventListener('change', () => setMode(modeAutoEl.checked ? 'auto' : 'test'));
+modeTestEl.addEventListener('change', () => setMode(modeTestEl.checked ? 'test' : 'auto'));
 
 // Paper size state
 // A4: 210 x 297 mm  |  Letter: 215.9 x 279.4 mm
@@ -591,7 +491,7 @@ function updateReadyState() {
   const ready = fieldsReady();
   document.body.classList.toggle('ready', ready);
   document.getElementById('btn-regen').disabled = !ready;
-  document.getElementById('btn-print').disabled = !ready || !API_URL || logBusy;
+  document.getElementById('btn-print').disabled = !ready || !API_URL || logBusy || !currentPrefix();
   nameEl.classList.toggle('missing', !nameEl.value.trim());
   programEl.classList.toggle('missing', !programEl.value.trim());
   return ready;
@@ -633,15 +533,28 @@ function moveToStart(nextStart) {
   buildGrid();
 }
 
-// Asks the print log for the next free start number of the selected prefix.
-async function loadNextStart() {
+// Sets the prefix the next auto print receives, as reported by the print log.
+function setAutoPrefix(prefix) {
+  autoPrefix = prefix || '';
+  updateReadyState();
+  buildGrid();
+}
+
+// Asks the print log for the next auto prefix, or for the next unprinted TST start number.
+async function loadNext() {
   if (!API_URL) return;
-  const prefix = COUNTRIES[parseInt(sel.value)].code;
+  const requested = mode;
   try {
-    const res = await logRequest('GET', { action: 'next', prefix: prefix });
-    if (res.ok && res.prefix === COUNTRIES[parseInt(sel.value)].code) {
+    const res = await logRequest('GET', { action: 'next', mode: requested });
+    if (!res.ok || requested !== mode) return;
+    if (requested === 'auto') {
+      setAutoPrefix(res.prefix);
+      setStatus(res.prefix
+        ? `The next auto prefix is ${res.prefix}.`
+        : 'No unused prefix remains.', res.prefix ? '' : 'error');
+    } else {
       moveToStart(res.next_start);
-      setStatus(`The next unprinted ${prefix} range starts at ${res.next_start}.`);
+      setStatus(`The next unprinted ${TEST_PREFIX} range starts at ${res.next_start}.`);
     }
   } catch (err) {
     setStatus('The print log could not be reached. Printing requires a connection to the print log.', 'error');
@@ -712,16 +625,19 @@ function buildPageTable(codes, idh, spech, fs) {
 }
 
 function buildGrid() {
-  const idx    = parseInt(sel.value);
-  const prefix = COUNTRIES[idx].code;
+  // Until the print log reports the auto prefix, the preview shows a placeholder.
+  const prefix = currentPrefix() || '---';
+  const prefixEl = document.getElementById('prefix');
+  prefixEl.value = currentPrefix();
+  prefixEl.placeholder = API_URL ? 'Loading' : 'Unavailable';
   const COL_WIDTHS = [18, 21.5, 21.5, 21.5, 21.5, 21.5, 21.5, 18];
   const idh    = 5;
   const spech  = 18;
   const fs     = parseInt(document.getElementById('fs').value) || 11;
   const COLS   = 8;
 
-  // Start: must be 8n+1 (1, 9, 17, 25, …). Snap input to nearest valid value.
-  let rawStart = parseInt(document.getElementById('startnum').value) || 1;
+  // Start: must be 8n+1 (1, 9, 17, 25, …). Snap input to nearest valid value. Auto starts at 1.
+  let rawStart = mode === 'auto' ? 1 : parseInt(document.getElementById('startnum').value) || 1;
   if (rawStart <= 1) {
     rawStart = 1;
   } else {
@@ -736,6 +652,7 @@ function buildGrid() {
   rawEnd = Math.max(8, Math.round(rawEnd / 8) * 8);
   // End must be >= start + 7 (at least one full row)
   if (rawEnd < start + 7) rawEnd = start + 7;
+  if (mode === 'auto' && rawEnd > AUTO_MAX_END) rawEnd = AUTO_MAX_END;
   const end = rawEnd;
 
   const total = end - start + 1;
@@ -824,8 +741,6 @@ document.querySelectorAll('input, select').forEach(el => el.addEventListener('ch
 // Name and program update the button state while typing; the sheet updates on Regenerate or on leaving the field.
 [nameEl, programEl].forEach(el => el.addEventListener('input', updateReadyState));
 
-// A new prefix starts at its next unprinted number
-sel.addEventListener('change', loadNextStart);
 
 function setBusy(busy) {
   logBusy = busy;
@@ -860,9 +775,9 @@ async function doPrint() {
   try {
     res = await logRequest('POST', {
       action: 'reserve',
+      mode: mode,
       name: op.name,
       program: op.program,
-      prefix: range.prefix,
       start: range.start,
       end: range.end,
       pages: range.pages,
@@ -879,17 +794,18 @@ async function doPrint() {
     if (res.error === 'overlap') {
       const c = res.conflict;
       const when = c.timestamp_utc.replace('T', ' ').replace('Z', ' UTC');
-      moveToStart(res.next_start);
-      setStatus(`Not printed. ${c.first_code}–${c.last_code} was printed by ${c.name} (${c.program}) on ${when}, print ID ${c.print_id}. ` +
-        `The range has been moved to the next unprinted start number, ${res.next_start}.`, 'error');
+      setAutoPrefix(res.prefix);
+      setStatus(`Not printed. ${c.first_code}–${c.last_code} is recorded for ${c.name} (${c.program}), ${when}, print ID ${c.print_id}. ` +
+        `The next auto prefix is ${res.prefix}.`, 'error');
     } else {
       setStatus(`Not printed. ${res.message || 'The print log refused the request.'}`, 'error');
     }
     return;
   }
 
-  // The range is logged: show the print ID on the sheet and print it
+  // The range is logged: show the assigned prefix and the print ID on the sheet, and print it
   printRecord = res.record;
+  if (mode === 'auto') autoPrefix = res.record.prefix;
   buildGrid();
 
   // Browsers do not expose scale or duplex settings to scripts. The @page rule sets the
@@ -908,17 +824,22 @@ async function doPrint() {
   const r = res.record;
   afterPrintStep = () => {
     printRecord = null;
-    moveToStart(res.next_start);
-    setStatus(`Logged as print ${r.print_id}: ${r.first_code}–${r.last_code}. ` +
-      `The next unprinted ${r.prefix} range starts at ${res.next_start}.`, 'ok');
+    if (res.mode === 'auto') {
+      setAutoPrefix(res.prefix);
+      setStatus(`Logged as print ${r.print_id}: ${r.first_code}–${r.last_code}. The next auto prefix is ${res.prefix}.`, 'ok');
+    } else {
+      moveToStart(res.next_start);
+      setStatus(`Logged as print ${r.print_id}: ${r.first_code}–${r.last_code}. ` +
+        `The next unprinted ${TEST_PREFIX} range starts at ${res.next_start}.`, 'ok');
+    }
   };
 
   // The afterprint event (fired when the dialog closes) calls endPrint().
   window.print();
 }
 
-// Start at the next unprinted number for the initial prefix
-loadNextStart();
+// Start in auto mode with the next unused prefix
+setMode('auto');
 </script>
 </body>
 </html>
