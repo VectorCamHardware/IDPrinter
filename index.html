@@ -107,6 +107,8 @@
     }
 
     .field .mode-option input { width: auto; margin: 0; }
+    .field .mode-option.disabled { color: #aaa; cursor: not-allowed; }
+    .field .mode-option.disabled input { cursor: not-allowed; }
 
     .required { color: #d9534f; }
 
@@ -326,6 +328,7 @@
       <div class="mode-options" role="group" aria-label="Prefix mode">
         <label class="mode-option"><input type="checkbox" id="mode-auto" checked> Auto</label>
         <label class="mode-option"><input type="checkbox" id="mode-test"> Test</label>
+        <label class="mode-option disabled" id="mode-program-option" title="Available when the program is VectorCatch"><input type="checkbox" id="mode-program" disabled> VCH</label>
       </div>
     </div>
     <div class="field">
@@ -393,6 +396,9 @@
   Test uses the prefix TST. Test ranges may be printed more than once.
 </p>
 <p class="hint">
+  VCH is available when the program is VectorCatch. VCH codes continue from the last printed number. Each VCH code is printed once.
+</p>
+<p class="hint">
   Each print is recorded in the print log.
 </p>
 
@@ -413,26 +419,43 @@
 </div>
 
 <script>
-// Prefix mode: 'auto' (prefix assigned by the print log) or 'test' (prefix TST, repeats allowed).
+// Prefix mode:
+//   'auto'     prefix assigned by the print log, one print per prefix
+//   'test'     prefix TST, repeats allowed
+//   'program'  fixed prefix of the program (VectorCatch: VCH), codes continue from the last printed number
 const TEST_PREFIX = 'TST';
 const AUTO_MAX_END = 992;   // auto codes keep three digits
+// Program prefixes, keyed like PROGRAM_PREFIXES in apps-script/Code.gs (lower case, letters and digits only)
+const PROGRAM_PREFIXES = { vectorcatch: 'VCH' };
 const modeAutoEl = document.getElementById('mode-auto');
 const modeTestEl = document.getElementById('mode-test');
+const modeProgramEl = document.getElementById('mode-program');
 let mode = 'auto';
 let autoPrefix = '';        // prefix the next auto print receives, from the print log
 
-function currentPrefix() {
-  return mode === 'test' ? TEST_PREFIX : autoPrefix;
+// Prefix assigned to the program entered in the Program field, or ''.
+function programPrefix() {
+  const key = document.getElementById('program').value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return Object.prototype.hasOwnProperty.call(PROGRAM_PREFIXES, key) ? PROGRAM_PREFIXES[key] : '';
 }
 
-// The two checkboxes are exclusive: checking one clears the other, and one stays checked.
+function currentPrefix() {
+  if (mode === 'test') return TEST_PREFIX;
+  if (mode === 'program') return programPrefix();
+  return autoPrefix;
+}
+
+// The checkboxes are exclusive: checking one clears the others, and one stays checked.
 function setMode(next) {
+  if (next === 'program' && !programPrefix()) next = 'auto';
   mode = next;
   modeAutoEl.checked = next === 'auto';
   modeTestEl.checked = next === 'test';
+  modeProgramEl.checked = next === 'program';
   const startEl = document.getElementById('startnum');
   const endEl = document.getElementById('endnum');
-  startEl.disabled = next === 'auto';
+  // Auto starts at 1; program codes start at the next unprinted number. Only test allows a chosen start.
+  startEl.disabled = next !== 'test';
   endEl.max = next === 'auto' ? AUTO_MAX_END : 99999;
   if (next === 'auto') {
     const length = Math.min(AUTO_MAX_END, Math.max(8, (parseInt(endEl.value) || 80) - (parseInt(startEl.value) || 1) + 1));
@@ -446,6 +469,15 @@ function setMode(next) {
 
 modeAutoEl.addEventListener('change', () => setMode(modeAutoEl.checked ? 'auto' : 'test'));
 modeTestEl.addEventListener('change', () => setMode(modeTestEl.checked ? 'test' : 'auto'));
+modeProgramEl.addEventListener('change', () => setMode(modeProgramEl.checked ? 'program' : 'auto'));
+
+// The VCH checkbox is available only while the program is VectorCatch.
+function updateProgramMode() {
+  const available = !!programPrefix();
+  modeProgramEl.disabled = !available;
+  document.getElementById('mode-program-option').classList.toggle('disabled', !available);
+  if (mode === 'program' && !available) setMode('auto');
+}
 
 // Paper size state
 // A4: 210 x 297 mm  |  Letter: 215.9 x 279.4 mm
@@ -494,6 +526,9 @@ function updateReadyState() {
   document.getElementById('btn-print').disabled = !ready || !API_URL || logBusy || !currentPrefix();
   nameEl.classList.toggle('missing', !nameEl.value.trim());
   programEl.classList.toggle('missing', !programEl.value.trim());
+  const available = !!programPrefix();
+  modeProgramEl.disabled = !available;
+  document.getElementById('mode-program-option').classList.toggle('disabled', !available);
   return ready;
 }
 
@@ -544,9 +579,12 @@ function setAutoPrefix(prefix) {
 async function loadNext() {
   if (!API_URL) return;
   const requested = mode;
+  const params = { action: 'next', mode: requested };
+  if (requested === 'program') params.program = programEl.value.trim();
   try {
-    const res = await logRequest('GET', { action: 'next', mode: requested });
+    const res = await logRequest('GET', params);
     if (!res.ok || requested !== mode) return;
+    if (requested !== 'auto' && res.prefix !== currentPrefix()) return;   // program changed meanwhile
     if (requested === 'auto') {
       setAutoPrefix(res.prefix);
       setStatus(res.prefix
@@ -554,7 +592,7 @@ async function loadNext() {
         : 'No unused prefix remains.', res.prefix ? '' : 'error');
     } else {
       moveToStart(res.next_start);
-      setStatus(`The next unprinted ${TEST_PREFIX} range starts at ${res.next_start}.`);
+      setStatus(`The next unprinted ${res.prefix} range starts at ${res.next_start}.`);
     }
   } catch (err) {
     setStatus('The print log could not be reached. Printing requires a connection to the print log.', 'error');
@@ -741,6 +779,9 @@ document.querySelectorAll('input, select').forEach(el => el.addEventListener('ch
 // Name and program update the button state while typing; the sheet updates on Regenerate or on leaving the field.
 [nameEl, programEl].forEach(el => el.addEventListener('input', updateReadyState));
 
+// Leaving VectorCatch while VCH is selected returns to auto mode.
+programEl.addEventListener('input', updateProgramMode);
+
 
 function setBusy(busy) {
   logBusy = busy;
@@ -794,9 +835,14 @@ async function doPrint() {
     if (res.error === 'overlap') {
       const c = res.conflict;
       const when = c.timestamp_utc.replace('T', ' ').replace('Z', ' UTC');
-      setAutoPrefix(res.prefix);
-      setStatus(`Not printed. ${c.first_code}–${c.last_code} is recorded for ${c.name} (${c.program}), ${when}, print ID ${c.print_id}. ` +
-        `The next auto prefix is ${res.prefix}.`, 'error');
+      const recorded = `Not printed. ${c.first_code}–${c.last_code} is recorded for ${c.name} (${c.program}), ${when}, print ID ${c.print_id}. `;
+      if (res.mode === 'program') {
+        moveToStart(res.next_start);
+        setStatus(recorded + `The range has been moved to the next unprinted ${res.prefix} start number, ${res.next_start}.`, 'error');
+      } else {
+        setAutoPrefix(res.prefix);
+        setStatus(recorded + `The next auto prefix is ${res.prefix}.`, 'error');
+      }
     } else {
       setStatus(`Not printed. ${res.message || 'The print log refused the request.'}`, 'error');
     }
@@ -830,7 +876,7 @@ async function doPrint() {
     } else {
       moveToStart(res.next_start);
       setStatus(`Logged as print ${r.print_id}: ${r.first_code}–${r.last_code}. ` +
-        `The next unprinted ${TEST_PREFIX} range starts at ${res.next_start}.`, 'ok');
+        `The next unprinted ${res.prefix} range starts at ${res.next_start}.`, 'ok');
     }
   };
 
