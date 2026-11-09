@@ -1,5 +1,7 @@
 # IDPrinter
 
+> **Archived (November 2026).** The ID Printer has moved to the private VectorCam operations repository and now runs from its Google Apps Script web app instead of this GitHub Pages site. For access or the current link, contact vectorcamhardware@gmail.com. This repository is kept read-only for its history.
+
 Generates printable specimen ID sheets for VectorCam. Each sheet has rows of ID labels (for example `AIA001`–`AIA080`), a 15 mm reference, and the name / program of the person who printed it.
 
 ## Prefix modes
